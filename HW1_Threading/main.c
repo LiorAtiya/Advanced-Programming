@@ -10,29 +10,12 @@
 // global variables
 int key;
 char *flag;
-
-// void *encryptAndDecrypt()
-// {
-// 	// Get data from file
-// 	char buffer[BUFFERSIZE];
-// 	fgets(buffer, BUFFERSIZE, stdin);
-
-// 	// //Check type of flag
-// 	// if(strcmp(flag,"-e") == 0){
-// 	// 	encrypt(buffer,key);
-// 	// 	printf("%s",buffer);
-// 	// }else if(strcmp(flag,"-d") == 0){
-// 	// 	decrypt(buffer,key);
-// 	// 	printf("%s",buffer);
-// 	// }else{
-// 	// 	printf("Error flag: Enter -e/-d\n");
-// 	// 	exit(0);
-// 	// }
-// }
+char arr[256][10];
 
 typedef struct Task
 {
-	char buffer[5];
+	int index;
+	char buffer[6];
 } Task;
 
 Task taskQueue[256];
@@ -43,16 +26,20 @@ pthread_cond_t condQueue;
 
 void executeTask(Task *task)
 {
+	// printf("thread: %s\n",task->buffer);
+
 	// Check type of flag
 	if (strcmp(flag, "-e") == 0)
 	{
 		encrypt(task->buffer, key);
-		printf("%s", task->buffer);
+		memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
+		// printf("enc: %s\n", task->buffer);
 	}
 	else if (strcmp(flag, "-d") == 0)
 	{
 		decrypt(task->buffer, key);
-		printf("%s", task->buffer);
+		memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
+		// printf("%s", task->buffer);
 	}
 }
 
@@ -64,9 +51,10 @@ void submitTask(Task task)
 	pthread_mutex_unlock(&mutexQueue);
 	pthread_cond_signal(&condQueue);
 }
+
 void *startThread(void *args)
 {
-	while (1)
+	while (taskCount)
 	{
 		Task task;
 
@@ -88,6 +76,8 @@ void *startThread(void *args)
 
 		executeTask(&task);
 	}
+
+	return 0;
 }
 
 int main(int argc, char *argv[])
@@ -95,7 +85,8 @@ int main(int argc, char *argv[])
 	// Check valid input
 	if (argc != 3)
 	{
-		printf("Error args: Need just 2 arguments - key, flag\n");
+		printf("Too few arguments \n");
+		printf("USAGE: ./coder key flag < file.txt > out.txt\n");
 		exit(0);
 	}
 
@@ -109,19 +100,25 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	char buffer[5]; // Buffer to store data
-
-	while (fgets(buffer, sizeof(buffer), stdin) != NULL)
-	{
-		Task newTask;
-		memcpy(&newTask, buffer, sizeof(buffer));
-		submitTask(newTask);
-	}
-
 	pthread_t threads[THREAD_NUM];
 	pthread_mutex_init(&mutexQueue, NULL);
 	pthread_cond_init(&condQueue, NULL);
+
+	// Read file from the input
+	char buffer[5]; // Buffer to store data
+	int index = 0;
+	while (fgets(buffer, sizeof(buffer), stdin) != NULL)
+	{
+		Task newTask;
+		newTask.index = index;
+		memcpy(&newTask.buffer, buffer, sizeof(buffer));
+		// printf("index: %d | buffer: %s\n", newTask.index, newTask.buffer);
+		submitTask(newTask);
+		index++;
+	}
+
 	int i;
+
 	// Create threads
 	for (i = 0; i < THREAD_NUM; i++)
 	{
@@ -143,25 +140,10 @@ int main(int argc, char *argv[])
 	pthread_cond_destroy(&condQueue);
 	pthread_mutex_destroy(&mutexQueue);
 
-	//============================================================
-	// //Check type of flag
-	// if(strcmp(flag,"-e") == 0){
-	// 	encrypt(buffer,key);
-	// 	printf("%s",buffer);
-	// }else if(strcmp(flag,"-d") == 0){
-	// 	decrypt(buffer,key);
-	// 	printf("%s",buffer);
-	// }else{
-	// 	printf("Error flag: Enter -e/-d\n");
-	// 	exit(0);
-	// }
-
-	// char data[] = "my text to encrypt";
-	// encrypt(buffer,key);
-	// printf("encripted data: %s\n",buffer);
-
-	// decrypt(data,key);
-	// printf("decripted data: %s\n",data);
+	for (int i = 0; i < 10; i++)
+	{
+		printf("arr after encrypt/decrypt: %s\n", arr[i]);
+	}
 
 	return 0;
 }
