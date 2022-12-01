@@ -1,8 +1,10 @@
 #include "codec.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define BUFFERSIZE 1024
 #define THREAD_NUM 4
@@ -10,7 +12,7 @@
 // global variables
 int key;
 char *flag;
-char arr[256][10];
+char arr[256][1024];
 
 typedef struct Task
 {
@@ -26,8 +28,6 @@ pthread_cond_t condQueue;
 
 void executeTask(Task *task)
 {
-	// printf("thread: %s\n",task->buffer);
-
 	// Check type of flag
 	if (strcmp(flag, "-e") == 0)
 	{
@@ -54,7 +54,7 @@ void submitTask(Task task)
 
 void *startThread(void *args)
 {
-	while (taskCount)
+	while (taskCount > 0)
 	{
 		Task task;
 
@@ -107,6 +107,10 @@ int main(int argc, char *argv[])
 	// Read file from the input
 	char buffer[5]; // Buffer to store data
 	int index = 0;
+
+	// read(STDIN_FILENO, buffer, 10); 
+	// printf("buffer: %s\n", buffer);
+
 	while (fgets(buffer, sizeof(buffer), stdin) != NULL)
 	{
 		Task newTask;
@@ -142,7 +146,7 @@ int main(int argc, char *argv[])
 
 	for (int i = 0; i < 10; i++)
 	{
-		printf("arr after encrypt/decrypt: %s\n", arr[i]);
+		printf("%s", arr[i]);
 	}
 
 	return 0;

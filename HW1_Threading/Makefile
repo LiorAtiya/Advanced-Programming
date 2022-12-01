@@ -2,7 +2,7 @@
 all: task
 
 task: codec.h main.c
-	gcc main.c -L. -l Codec -o coder -pthread
+	gcc main.c codec.c -o coder -pthread
 
 .PHONY: clean
 clean:
