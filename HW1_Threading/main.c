@@ -11,7 +11,11 @@
 // global variables
 int key;
 char *flag;
-char arr[256][1024];
+int taskCount = 0;
+//for index of per task
+int count = 0;
+int executed = 0;
+int notFinished = 1;
 
 typedef struct Task
 {
@@ -20,11 +24,6 @@ typedef struct Task
 } Task;
 
 Task taskQueue[256];
-int taskCount = 0;
-//for index of per task
-int count = 0;
-int executed = 0;
-int notFinished = 1;
 
 pthread_mutex_t mutexQueue;
 pthread_cond_t condQueue;
@@ -44,7 +43,6 @@ void executeTask(Task *task)
 	//Checks the next in the executed tasks 
 	while (1)
 	{
-		// printf("exe: %d | index: %d\n",executed,task->index);
 		if(executed == task->index){
 			printf("%s", task->buffer);
 			executed++;
@@ -144,11 +142,6 @@ int main(int argc, char *argv[])
 
 	pthread_cond_destroy(&condQueue);
 	pthread_mutex_destroy(&mutexQueue);
-
-	// for (int i = 0; i < 10; i++)
-	// {
-	// 	printf("%s", arr[i]);
-	// }
 
 	return 0;
 }
