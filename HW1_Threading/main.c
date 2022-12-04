@@ -7,7 +7,6 @@
 #include <unistd.h>
 
 #define BUFFERSIZE 1024
-#define THREAD_NUM 4
 
 // global variables
 int key;
@@ -17,12 +16,15 @@ char arr[256][1024];
 typedef struct Task
 {
 	int index;
-	char buffer[6];
+	char bufferIN[10];
+	char bufferOUT[1025];
 } Task;
 
 Task taskQueue[256];
 int taskCount = 0;
-
+int count = 0;
+int first = 1;
+int isDone = 1;
 pthread_mutex_t mutexQueue;
 pthread_cond_t condQueue;
 
@@ -31,15 +33,13 @@ void executeTask(Task *task)
 	// Check type of flag
 	if (strcmp(flag, "-e") == 0)
 	{
-		encrypt(task->buffer, key);
-		memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
-		// printf("enc: %s\n", task->buffer);
+		encrypt(task->bufferIN, key);
+		memcpy(&arr[task->index], task->bufferIN, sizeof(task->bufferIN));
 	}
 	else if (strcmp(flag, "-d") == 0)
 	{
-		decrypt(task->buffer, key);
-		memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
-		// printf("%s", task->buffer);
+		decrypt(task->bufferIN, key);
+		memcpy(&arr[task->index], task->bufferIN, sizeof(task->bufferIN));
 	}
 }
 
@@ -54,15 +54,30 @@ void submitTask(Task task)
 
 void *startThread(void *args)
 {
-	while (taskCount > 0)
+	while (taskCount > 0 || isDone)
 	{
+		pthread_mutex_lock(&mutexQueue);
+		char buffer[5]; // Buffer to store data
+		if (fgets(buffer, sizeof(buffer), stdin) != NULL)
+		{
+			Task newTask;
+			newTask.index = count;
+			memcpy(&newTask.bufferIN, buffer, sizeof(buffer));
+			count++;
+
+			taskQueue[taskCount] = newTask;
+			taskCount++;
+
+		}else {
+			isDone = 0;
+		}
+
 		Task task;
 
-		pthread_mutex_lock(&mutexQueue);
-		while (taskCount == 0)
-		{
-			pthread_cond_wait(&condQueue, &mutexQueue);
-		}
+		// while (taskCount == 1)
+		// {
+		// 	pthread_cond_wait(&condQueue, &mutexQueue);
+		// }
 
 		task = taskQueue[0];
 		int i;
@@ -71,7 +86,6 @@ void *startThread(void *args)
 			taskQueue[i] = taskQueue[i + 1];
 		}
 		taskCount--;
-
 		pthread_mutex_unlock(&mutexQueue);
 
 		executeTask(&task);
@@ -100,31 +114,15 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	pthread_t threads[THREAD_NUM];
+	int num_of_cores = sysconf(_SC_NPROCESSORS_CONF);
+
+	pthread_t threads[num_of_cores];
 	pthread_mutex_init(&mutexQueue, NULL);
 	pthread_cond_init(&condQueue, NULL);
 
-	// Read file from the input
-	char buffer[5]; // Buffer to store data
-	int index = 0;
-
-	// read(STDIN_FILENO, buffer, 10); 
-	// printf("buffer: %s\n", buffer);
-
-	while (fgets(buffer, sizeof(buffer), stdin) != NULL)
-	{
-		Task newTask;
-		newTask.index = index;
-		memcpy(&newTask.buffer, buffer, sizeof(buffer));
-		// printf("index: %d | buffer: %s\n", newTask.index, newTask.buffer);
-		submitTask(newTask);
-		index++;
-	}
-
 	int i;
-
 	// Create threads
-	for (i = 0; i < THREAD_NUM; i++)
+	for (i = 0; i < num_of_cores; i++)
 	{
 		if (pthread_create(&threads[i], NULL, &startThread, NULL) != 0)
 		{
@@ -133,7 +131,7 @@ int main(int argc, char *argv[])
 	}
 
 	// Join threads
-	for (i = 0; i < THREAD_NUM; i++)
+	for (i = 0; i < num_of_cores; i++)
 	{
 		if (pthread_join(threads[i], NULL) != 0)
 		{
