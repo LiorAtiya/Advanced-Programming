@@ -16,15 +16,16 @@ char arr[256][1024];
 typedef struct Task
 {
 	int index;
-	char bufferIN[10];
-	char bufferOUT[1025];
+	char buffer[10];
 } Task;
 
 Task taskQueue[256];
 int taskCount = 0;
+//for index of per task
 int count = 0;
-int first = 1;
-int isDone = 1;
+int executed = 0;
+int notFinished = 1;
+
 pthread_mutex_t mutexQueue;
 pthread_cond_t condQueue;
 
@@ -33,52 +34,52 @@ void executeTask(Task *task)
 	// Check type of flag
 	if (strcmp(flag, "-e") == 0)
 	{
-		encrypt(task->bufferIN, key);
-		memcpy(&arr[task->index], task->bufferIN, sizeof(task->bufferIN));
+		encrypt(task->buffer, key);
 	}
 	else if (strcmp(flag, "-d") == 0)
 	{
-		decrypt(task->bufferIN, key);
-		memcpy(&arr[task->index], task->bufferIN, sizeof(task->bufferIN));
+		decrypt(task->buffer, key);
 	}
-}
 
-void submitTask(Task task)
-{
-	pthread_mutex_lock(&mutexQueue);
-	taskQueue[taskCount] = task;
-	taskCount++;
-	pthread_mutex_unlock(&mutexQueue);
-	pthread_cond_signal(&condQueue);
+	//Checks the next in the executed tasks 
+	while (1)
+	{
+		// printf("exe: %d | index: %d\n",executed,task->index);
+		if(executed == task->index){
+			printf("%s", task->buffer);
+			executed++;
+			break;
+		}else if(executed > task->index){
+			break;
+		}
+	}
 }
 
 void *startThread(void *args)
 {
-	while (taskCount > 0 || isDone)
+	// there are still tasks or not finished reading the file
+	while (taskCount > 0 || notFinished)
 	{
 		pthread_mutex_lock(&mutexQueue);
 		char buffer[5]; // Buffer to store data
+		// Read file
 		if (fgets(buffer, sizeof(buffer), stdin) != NULL)
 		{
 			Task newTask;
 			newTask.index = count;
-			memcpy(&newTask.bufferIN, buffer, sizeof(buffer));
+			memcpy(&newTask.buffer, buffer, sizeof(buffer));
 			count++;
 
+			// Add to queue of tasks
 			taskQueue[taskCount] = newTask;
 			taskCount++;
-
-		}else {
-			isDone = 0;
+		}
+		else
+		{
+			notFinished = 0;
 		}
 
 		Task task;
-
-		// while (taskCount == 1)
-		// {
-		// 	pthread_cond_wait(&condQueue, &mutexQueue);
-		// }
-
 		task = taskQueue[0];
 		int i;
 		for (i = 0; i < taskCount - 1; i++)
@@ -108,12 +109,14 @@ int main(int argc, char *argv[])
 	key = atoi(argv[1]);
 	flag = argv[2];
 
+	// Checks valid flag
 	if (strcmp(flag, "-e") != 0 && strcmp(flag, "-d") != 0)
 	{
 		printf("Error flag: Enter -e/-d\n");
 		exit(0);
 	}
 
+	// Take number of cores of computer from the system
 	int num_of_cores = sysconf(_SC_NPROCESSORS_CONF);
 
 	pthread_t threads[num_of_cores];
@@ -142,10 +145,10 @@ int main(int argc, char *argv[])
 	pthread_cond_destroy(&condQueue);
 	pthread_mutex_destroy(&mutexQueue);
 
-	for (int i = 0; i < 10; i++)
-	{
-		printf("%s", arr[i]);
-	}
+	// for (int i = 0; i < 10; i++)
+	// {
+	// 	printf("%s", arr[i]);
+	// }
 
 	return 0;
 }
