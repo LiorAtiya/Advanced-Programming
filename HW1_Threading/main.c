@@ -17,10 +17,12 @@ int count = 0;
 int executed = 0;
 int notFinished = 1;
 
+char arr[BUFFERSIZE][BUFFERSIZE];
+
 typedef struct Task
 {
 	int index;
-	char buffer[10];
+	char buffer[BUFFERSIZE];
 } Task;
 
 Task taskQueue[256];
@@ -40,17 +42,19 @@ void executeTask(Task *task)
 		decrypt(task->buffer, key);
 	}
 
-	//Checks the next in the executed tasks 
-	while (1)
-	{
-		if(executed == task->index){
-			printf("%s", task->buffer);
-			executed++;
-			break;
-		}else if(executed > task->index){
-			break;
-		}
-	}
+	memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
+
+	// //Checks the next in the executed tasks 
+	// while (1)
+	// {
+	// 	if(executed == task->index){
+	// 		printf("%s", task->buffer);
+	// 		executed++;
+	// 		break;
+	// 	}else if(executed > task->index){
+	// 		break;
+	// 	}
+	// }
 }
 
 void *startThread(void *args)
@@ -59,7 +63,7 @@ void *startThread(void *args)
 	while (taskCount > 0 || notFinished)
 	{
 		pthread_mutex_lock(&mutexQueue);
-		char buffer[5]; // Buffer to store data
+		char buffer[BUFFERSIZE]; // Buffer to store data
 		// Read file
 		if (fgets(buffer, sizeof(buffer), stdin) != NULL)
 		{
@@ -67,7 +71,6 @@ void *startThread(void *args)
 			newTask.index = count;
 			memcpy(&newTask.buffer, buffer, sizeof(buffer));
 			count++;
-
 			// Add to queue of tasks
 			taskQueue[taskCount] = newTask;
 			taskCount++;
@@ -138,6 +141,10 @@ int main(int argc, char *argv[])
 		{
 			perror("Failed to join the thread");
 		}
+	}
+
+	for(i = 0 ; i < count ; i++){
+		printf("%s",arr[i]);
 	}
 
 	pthread_cond_destroy(&condQueue);
