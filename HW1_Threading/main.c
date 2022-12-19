@@ -44,6 +44,8 @@ void executeTask(Task *task)
 
 	memcpy(&arr[task->index], task->buffer, sizeof(task->buffer));
 
+	// ---- Option instead using in array -----
+	
 	// //Checks the next in the executed tasks 
 	// while (1)
 	// {
