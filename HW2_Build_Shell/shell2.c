@@ -6,22 +6,27 @@
 #include "stdlib.h"
 #include "unistd.h"
 #include <string.h>
+#include <sys/mman.h>
+
+// char *prompt;
 
 int main()
 {
-    char *prompt = "hello";
+    char *prompt;
+    /* Share the prompt name since we want to update the parent after the child changing the name */
+    prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
+    strcpy(prompt, "hello:");
+
     char command[1024];
     char *token;
     char *outfile;
     int i, fd, amper, redirect, retid, status, argcount;
     char *argv[10];
 
-    FILE *fp;
-
     while (1)
     {
         // Input a command from the keyboard
-        printf("%s: ", prompt);
+        printf("%s ", prompt);
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0';
 
@@ -79,34 +84,25 @@ int main()
         // Change prompt name
         if (!strcmp(argv[0], "prompt") && !strcmp(argv[1], "=") && argv[2] != NULL)
         {
-            prompt = argv[2];
+            strcpy(prompt, argv[2]);
+            // prompt = argv[2];
         }
 
         // Print the last status command executed
         if (!strcmp(argv[0], "echo") && !strcmp(argv[1], "$?") && argcount == 2)
         {
-            int last_status = 1;
+            // int last_status = 1;
             printf("%d", WEXITSTATUS(status));
             printf("\n");
             continue;
         }
 
-        // *********** NEED TO CHECK **************
         // Change directory 
         if (!strcmp(argv[0], "cd"))
         {
-            char path[100];
-            if (!chdir(argv[1]))
+            if (chdir(argv[1]))
             {
-                // Save the current directory in path
-                if (getcwd(path, sizeof(path)) == NULL)
-                {
-                    perror("getcwd error! - path is NULL");
-                }
-            }
-            else
-            {
-                perror("chdir error!");
+                printf("cd: %s: No such file or directory\n", argv[1]);
             }
         }
 
