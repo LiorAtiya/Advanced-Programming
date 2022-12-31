@@ -1,0 +1,12 @@
+ls: cannot access '–l': No such file or directory
+ls: cannot access 'nofile': No such file or directory
+total 160
+-rw-r--r-- 1 lior lior   165 Dec 31 18:48 Makefile
+-rw-r--r-- 1 lior lior 52370 Dec 23 13:18 hw2_heb.pdf
+-rwxr-xr-x 2 lior lior 21880 Dec 24 19:37 main
+-rw-r--r-- 1 lior lior  8466 Dec 23 13:18 main.c
+-rw-r----- 1 lior lior   106 Dec 31 18:48 mylog
+-rwxr-xr-x 1 lior lior 17392 Dec 31 18:48 shell2
+-rw-r--r-- 1 lior lior  3891 Dec 31 18:47 shell2.c
+-rwxr-xr-x 1 lior lior 17216 Dec 31 18:48 shell3
+-rw-r--r-- 1 lior lior  2687 Dec 23 13:18 shell3.c

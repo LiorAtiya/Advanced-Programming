@@ -8,13 +8,62 @@
 #include <string.h>
 #include <sys/mman.h>
 
-// char *prompt;
+char lastCommand[1024];
+char *prompt;
+
+// https://stackoverflow.com/questions/779875/what-function-is-to-replace-a-substring-from-a-string-in-c
+char *str_replace(char *orig, char *rep, char *with) {
+    char *result; // the return string
+    char *ins;    // the next insert point
+    char *tmp;    // varies
+    int len_rep;  // length of rep (the string to remove)
+    int len_with; // length of with (the string to replace rep with)
+    int len_front; // distance between rep and end of last rep
+    int count;    // number of replacements
+
+    // sanity checks and initialization
+    if (!orig || !rep)
+        return NULL;
+    len_rep = strlen(rep);
+    if (len_rep == 0)
+        return NULL; // empty rep causes infinite loop during count
+    if (!with)
+        with = "";
+    len_with = strlen(with);
+
+    // count the number of replacements needed
+    ins = orig;
+    for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+        ins = tmp + len_rep;
+    }
+
+    tmp = result = malloc(strlen(orig) + (len_with - len_rep) * count + 1);
+
+    if (!result)
+        return NULL;
+
+    while (count--) {
+        ins = strstr(orig, rep);
+        len_front = ins - orig;
+        tmp = strncpy(tmp, orig, len_front) + len_front;
+        tmp = strcpy(tmp, with) + len_with;
+        orig += len_front + len_rep; // move to next "end of rep"
+    }
+    strcpy(tmp, orig);
+    return result;
+}
+
+// handler SIGINT
+void ctrl_c_handler()
+{
+    write(STDOUT_FILENO, "\n%s You typed Control-C!", 20);
+}
+
 
 int main()
 {
-    char *prompt;
     /* Share the prompt name since we want to update the parent after the child changing the name */
-    // prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
+    prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
     strcpy(prompt, "hello:");
 
     char command[1024];
@@ -25,10 +74,19 @@ int main()
 
     while (1)
     {
+
+        // Handler with Ctrl + C
+        signal(SIGINT, ctrl_c_handler);
+
         // Input a command from the keyboard
         printf("%s ", prompt);
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0';
+    
+        /* Update the lest command */
+        strcpy(command, str_replace(command, "!!", lastCommand));
+        if (strlen(command) != 0)
+            strcpy(lastCommand, command);
 
         /* parse command line */
         i = 0;
@@ -85,7 +143,6 @@ int main()
         if (!strcmp(argv[0], "prompt") && !strcmp(argv[1], "=") && argv[2] != NULL)
         {
             strcpy(prompt, argv[2]);
-            // prompt = argv[2];
         }
 
         // Print the last status command executed
@@ -104,6 +161,12 @@ int main()
             {
                 printf("cd: %s: No such file or directory\n", argv[1]);
             }
+        }
+        
+        //Exit from the program
+        if (!strcmp(argv[0], "quit"))
+        {
+            exit(0);
         }
 
         /* for commands not part of the shell command language */
