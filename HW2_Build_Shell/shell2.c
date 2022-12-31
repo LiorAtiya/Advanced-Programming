@@ -14,7 +14,7 @@ int main()
 {
     char *prompt;
     /* Share the prompt name since we want to update the parent after the child changing the name */
-    prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
+    // prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
     strcpy(prompt, "hello:");
 
     char command[1024];
