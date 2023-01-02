@@ -34,7 +34,12 @@ typedef struct Commands {
     struct Commands *next;
 } Commands;
 
-
+//
+typedef struct last_commands {
+    char command[1024];
+    struct last_commands *next;
+    struct last_commands *prev;
+} last_commands;
 
 void key_value_add(char* key, char* value) {
     key_value *iter = key_value_root;
@@ -312,6 +317,11 @@ int main(){
     key_value_root = (key_value*) malloc(sizeof(key_value));
     key_value_root->next = NULL;
 
+    //For store the last commands
+    last_commands *last_commands_root = (last_commands*) malloc(sizeof(last_commands));
+    last_commands_root->next = NULL;
+    last_commands_root->prev = NULL;
+
     while (1) {
     
         // 8.Handler with Ctrl + C
@@ -325,12 +335,54 @@ int main(){
 
         /* 6. Update the lest command */
         strcpy(command, str_replace(command, "!!", lastCommand));
-        if (strlen(command) != 0)
+        if (strlen(command) != 0){
             strcpy(lastCommand, command);
+        }
 
         i = 0;
         pipes_num = 0;
+
+        
         token = strtok(command, " ");
+
+        //Handle with arrow up & down
+        if(!strcmp(token,"\033[A")){
+        
+            if(last_commands_root->prev != NULL){
+                strcpy(command, last_commands_root->prev->command);
+                last_commands_root = last_commands_root->prev;
+                token = strtok(command, " ");
+            }else{
+                strcpy(command, last_commands_root->command);
+            }
+            
+        } else if(!strcmp(token,"\033[B")){
+
+            if(last_commands_root->next != NULL){
+                strcpy(command, last_commands_root->next->command);
+                last_commands_root = last_commands_root->next;
+                token = strtok(command, " ");
+            }else{
+                strcpy(command, last_commands_root->next->command);
+            }
+
+        } else if (strlen(command) != 0){
+            
+            while(last_commands_root->next != NULL){
+                last_commands_root = last_commands_root->next;
+            }
+
+            //Insert command to current last_commands
+            strcpy(last_commands_root->command, lastCommand);
+
+            last_commands *next = (last_commands*) malloc(sizeof(last_commands));
+            next->prev = last_commands_root;
+            last_commands_root->next = next;
+            last_commands_root = last_commands_root->next;
+            last_commands_root->next = NULL;
+
+        }
+
         root = (Commands *)malloc(sizeof(Commands));
         root->next = NULL;
         Commands *current = root;
@@ -342,6 +394,8 @@ int main(){
             current->command[i] = token;
             token = strtok(NULL, " ");
             i++;
+
+            
             //There is pipes => allocate new place for new command
             if (token && !strcmp(token, "|")){
                 token = strtok(NULL, " "); // skip empty space after "|"
