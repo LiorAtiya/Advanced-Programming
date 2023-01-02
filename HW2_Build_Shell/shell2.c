@@ -11,6 +11,13 @@
 char lastCommand[1024];
 char *prompt;
 
+/* Command component linked list
+   (generated after seperating the whole command with pipe "|") */
+typedef struct Commands {
+    char *command[10];
+    struct Commands *next;
+} Commands;
+
 // https://stackoverflow.com/questions/779875/what-function-is-to-replace-a-substring-from-a-string-in-c
 char *str_replace(char *orig, char *rep, char *with) {
     char *result; // the return string
@@ -56,9 +63,16 @@ char *str_replace(char *orig, char *rep, char *with) {
 // handler SIGINT
 void ctrl_c_handler()
 {
-    write(STDOUT_FILENO, "\n%s You typed Control-C!", 20);
+    printf("\nYou typed Control-C!\n");
+    write(STDIN_FILENO, prompt, strlen(prompt)+1);
+    write(STDIN_FILENO, " ", 1);
 }
 
+/* Close both sides of fd pipe */
+void close_pipe(int fd[2]){
+    close(fd[0]);
+    close(fd[1]);
+}
 
 int main()
 {
@@ -67,6 +81,11 @@ int main()
     strcpy(prompt, "hello:");
 
     char command[1024];
+    Commands *root;
+
+    int pipes_num;
+    int pipe_one[2];
+    int pipe_two[2];
     char *token;
     char *outfile;
     int i, fd, amper, redirect, retid, status, argcount;
@@ -88,51 +107,69 @@ int main()
         if (strlen(command) != 0)
             strcpy(lastCommand, command);
 
+        //Init linked list of commands (for pipes)
+        root = (Commands *)malloc(sizeof(Commands));
+        root->next = NULL;
+        Commands *current = root;
+
         /* parse command line */
         i = 0;
         // Breaks string str into a series of tokens
         token = strtok(command, " ");
         while (token != NULL)
         {
-            argv[i] = token;
+            current->command[i] = token;
             token = strtok(NULL, " ");
             i++;
+            if (token && !strcmp(token, "|")){
+                token = strtok(NULL, " "); // skip empty space after "|"
+                pipes_num++;
+                current->command[i] = NULL;
+                i = 0;
+                Commands *next = (Commands *)malloc(sizeof(Commands));
+                current->next = next;
+                current = current->next;
+                current->next = NULL;
+                continue;
+            }
         }
-        argv[i] = NULL;
+        current->command[i] = NULL;
         argcount = i;
 
         /* Is command empty */
-        if (argv[0] == NULL)
+        if (root->command[0] == NULL)
             continue;
 
         /* Does command line end with & */
-        if (!strcmp(argv[i - 1], "&"))
+        if (!strcmp(current->command[argcount -1], "&"))
         {
             amper = 1;
-            argv[i - 1] = NULL;
+            root->command[argcount - 1] = NULL;
         }
         else
             amper = 0;
 
+        while(current->next!=NULL) current = current->next;
+
         /* Does command line end with > */
-        if (!strcmp(argv[i - 2], ">"))
+        if (argcount > 1 && !strcmp(argv[argcount - 2], ">"))
         {
             redirect = 1;
-            argv[i - 2] = NULL;
-            outfile = argv[i - 1];
+            current->command[argcount - 2] = NULL;
+            outfile = current->command[argcount - 1];
         }
         /* Does command line end with 2> */
-        else if (!strcmp(argv[i - 2], "2>"))
+        else if (argcount > 1 && !strcmp(argv[argcount - 2], "2>"))
         {
             redirect = 2;
-            argv[i - 2] = NULL;
-            outfile = argv[i - 1];
+            current->command[argcount - 2] = NULL;
+            outfile = current->command[i - 1];
         }
-        else if (!strcmp(argv[i - 2], ">>"))
+        else if (argcount > 1 && !strcmp(argv[argcount - 2], ">>"))
         {
             redirect = 3;
-            argv[i - 2] = NULL;
-            outfile = argv[i - 1];
+            current->command[argcount - 2] = NULL;
+            outfile = current->command[i - 1];
         }
         else
         {
@@ -140,13 +177,13 @@ int main()
         }
 
         // Change prompt name
-        if (!strcmp(argv[0], "prompt") && !strcmp(argv[1], "=") && argv[2] != NULL)
+        if (!strcmp(current->command[0], "prompt") && !strcmp(current->command[1], "=") && current->command[2] != NULL)
         {
-            strcpy(prompt, argv[2]);
+            strcpy(prompt, current->command[2]);
         }
 
         // Print the last status command executed
-        if (!strcmp(argv[0], "echo") && !strcmp(argv[1], "$?") && argcount == 2)
+        if (!strcmp(current->command[0], "echo") && !strcmp(current->command[1], "$?") && argcount == 2)
         {
             // int last_status = 1;
             printf("%d", WEXITSTATUS(status));
@@ -155,16 +192,16 @@ int main()
         }
 
         // Change directory 
-        if (!strcmp(argv[0], "cd"))
+        if (!strcmp(current->command[0], "cd"))
         {
-            if (chdir(argv[1]))
+            if (chdir(current->command[1]))
             {
-                printf("cd: %s: No such file or directory\n", argv[1]);
+                printf("cd: %s: No such file or directory\n", current->command[1]);
             }
         }
         
         //Exit from the program
-        if (!strcmp(argv[0], "quit"))
+        if (!strcmp(current->command[0], "quit"))
         {
             exit(0);
         }
@@ -204,11 +241,103 @@ int main()
                 dup(fd);
                 close(fd);
             }
-            execvp(argv[0], argv);
+
+            if (pipes_num > 0){
+                current = root;
+                /* Create pipe (0 = pipe output. 1 = pipe input) */
+                pipe(pipe_one);
+                /* for more then 1 pipe we need another pipe for chaining */
+                if (pipes_num > 1)
+                    pipe(pipe_two);
+                /* For Iterating over all command components except the first & last components */
+                int pipes_iterator = pipes_num - 1, pipe_switcher = 1, status = 1;
+                /* Run first component (we need to get the input from the standart input) */
+                pid_t pid = fork();
+                if (pid == 0){
+                    dup2(pipe_one[1], 1);
+                    close(pipe_one[0]);
+                    if (pipes_num > 1)
+                        close_pipe(pipe_two);
+                    execvp(current->command[0], current->command);
+                    exit(0);
+                } else {
+                    waitpid(pid, &status, 0);
+                    close(pipe_one[1]);
+                    current = current->next;
+                }
+                /* Run [Iterate over] middle components (except first read name | echo heyand last)
+                   while getting input from one pipe and output to other pipe */
+                while (pipes_iterator > 0){
+                    pid = fork();
+                    if (pid == 0){
+                        if (pipe_switcher % 2 == 1){
+                            dup2(pipe_one[0], 0);
+                            dup2(pipe_two[1], 1);
+                        } else {
+                            dup2(pipe_two[0], 0);
+                            dup2(pipe_one[1], 1);
+                        }
+                        execvp(current->command[0], current->command);
+                        exit(0);
+                    } else {
+                        waitpid(pid, &status, 0);
+                        if (pipe_switcher % 2 == 1) {
+                            close(pipe_two[1]);
+                            close(pipe_one[0]);
+                            pipe(pipe_one);
+                        } else {
+                            close(pipe_one[1]);
+                            close(pipe_two[0]);
+                            pipe(pipe_two);
+                        }
+                        current = current->next;
+                        pipe_switcher++;
+                        pipes_iterator--;
+                    }
+                }
+                /* Run last component (we need to output to the standart output) */
+                //pid = fork();
+                //if (pid == 0) {
+                    if (pipe_switcher % 2 == 0)
+                        dup2(pipe_two[0], 0);
+                    else
+                        dup2(pipe_one[0], 0);
+
+                    if (redirect == 1) { /* redirect stdout */
+                        fd = creat(outfile, 0660);
+                        dup2(fd, STDOUT_FILENO);
+                    } else if (redirect == 3){ /* redirect stdout */
+                        fd = open(outfile, O_CREAT | O_WRONLY | O_APPEND, 0660);
+                        dup2(fd, STDOUT_FILENO);
+                    } else if (redirect == 2) { /* redirect stderr */
+                        fd = creat(outfile, 0660);
+                        dup2(fd, STDERR_FILENO);
+                    }
+
+                    execvp(current->command[0], current->command);
+                    exit(0);
+                //} else {
+                    //waitpid(pid, &status, 0);
+                    close_pipe(pipe_one);
+                    if (pipes_num > 1)
+                        close_pipe(pipe_two);
+                //}
+            }else {
+                execvp(current->command[0], current->command);
+            }
         }
 
         /* parent continues here */
         if (amper == 0)
             retid = wait(&status);
+
+        /* Free up all command components struct dynamic allocation */
+        Commands *prev = root;
+        current = root;
+        for (int i = 0; i <= pipes_num; i++) {
+            prev = current;
+            current = current->next;
+            free(prev);
+        }
     }
 }
