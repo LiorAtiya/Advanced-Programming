@@ -11,6 +11,7 @@
 
 int main_pid;
 char *prompt;
+char command[1024];
 char lastCommand[1024];
 int es = 0;
 int errInCd = 0;
@@ -34,12 +35,16 @@ typedef struct Commands {
     struct Commands *next;
 } Commands;
 
-//
+Commands *root;
+
+//last_commands linked list for store all of recent commands
 typedef struct last_commands {
     char command[1024];
     struct last_commands *next;
     struct last_commands *prev;
 } last_commands;
+
+last_commands *last_commands_root; 
 
 void key_value_add(char* key, char* value) {
     key_value *iter = key_value_root;
@@ -117,7 +122,7 @@ char *str_replace(char *orig, char *rep, char *with) {
     return result;
 }
 
-/* Handle with Ctrl+C input */
+// Handle with Ctrl+C input
 void ctrl_c_handler(int dummy) {
     strcpy(lastCommand, "^C");
     if (dummy == SIGTSTP) {
@@ -131,7 +136,47 @@ void ctrl_c_handler(int dummy) {
     }
 }
 
-/* Check if typed 'quit' */
+// Handle with arrow up & down
+void handle_arrows(char *token){
+
+    if(token != NULL && !strcmp(token,"\033[A")){ // arrow up
+    
+        if(last_commands_root->prev != NULL){ 
+            strcpy(command, last_commands_root->prev->command);
+            last_commands_root = last_commands_root->prev;
+            token = strtok(command, " ");
+        }else{
+            strcpy(command, last_commands_root->command);
+        }
+        
+    } else if(token != NULL && !strcmp(token,"\033[B")){ // arrow down
+
+        if(last_commands_root->next != NULL){
+            strcpy(command, last_commands_root->next->command);
+            last_commands_root = last_commands_root->next;
+            token = strtok(command, " ");
+        }else{
+            strcpy(command, last_commands_root->command);
+        }
+
+    } else if (token != NULL && strlen(command) != 0){
+        
+        while(last_commands_root->next != NULL){
+            last_commands_root = last_commands_root->next;
+        }
+
+        // Insert command to current last_commands
+        strcpy(last_commands_root->command, lastCommand);
+
+        last_commands *next = (last_commands*) malloc(sizeof(last_commands));
+        next->prev = last_commands_root;
+        last_commands_root->next = next;
+        last_commands_root = last_commands_root->next;
+        last_commands_root->next = NULL;
+    }
+}
+
+// Check if typed 'quit'
 void check_quit(char *token)
 {
     if (strcmp(token, "quit") == 0){
@@ -142,7 +187,7 @@ void check_quit(char *token)
     }
 }
 
-/* Check if typed 'echo $?' */
+// Check if typed 'echo $?' => Print the status of last command executed
 void handle_exit_status(Commands *list, int status) {
     while (list != NULL){
         for (int i = 0; i < 9; i++){
@@ -162,7 +207,7 @@ void handle_exit_status(Commands *list, int status) {
     }
 }
 
-/* Check if typed 'cd' */
+// Check if typed 'cd'
 int handle_cd_command(char *token1, char *token2) {
     if (token2 != NULL && !strcmp(token1, "cd")) {
         if (chdir(token2)){
@@ -174,6 +219,7 @@ int handle_cd_command(char *token1, char *token2) {
     return 0;
 }
 
+//Insert new variables to sturct key_value / Replace key with value for output
 void handle_variables(Commands *root,int pipes_num) {
     Commands *iterator = root;
     int num = pipes_num + 1;
@@ -211,15 +257,24 @@ void handle_variables(Commands *root,int pipes_num) {
     }
 }
 
-void handle_read_command(char *token1, char *token2){
-    if (token1 != NULL && token2 != NULL && strcmp(token1,"read") == 0) {
-        char *key = token1;
+void handle_read_command(){
+    if (root->command[0] != NULL && root->command[1] != NULL && strcmp(root->command[0],"read") == 0) {
+        char *key = root->command[1];
         char value[20];
         fgets(value, 20, stdin);
         value[strlen(value)-1] = '\0'; // remove new line ('\n')
-            char *val = value;
-            key_value_add(key, val);
+        char *val = value;
+        key_value_add(key, val);
     }
+}
+
+int handle_ampersand_command(Commands *current, int args_count) {
+    // Does command line end with &
+    if (!strcmp(current->command[args_count - 1], "&")){
+        root->command[args_count - 1] = NULL;
+        return 1;
+    } else
+        return 0;
 }
 
 int handle_redirection(int args_count, Commands *current){
@@ -247,7 +302,7 @@ int handle_redirection(int args_count, Commands *current){
         return 0;
 }
 
-/* Check if typed 'prompt = newPrompt' */
+// Check if typed 'prompt = newPrompt'
 void change_prompt(char *token1, char *token2, char *token3) {
     if (token1 != NULL && token2 != NULL && token3 != NULL && strcmp(token1, "prompt") == 0 
             && strcmp(token2, "=") == 0) {
@@ -260,36 +315,36 @@ void execute_redirection(int redirect, int pipes_num) {
         { /* redirect stdout */
             fd = creat(outfile, 0660);
             if (pipes_num == 0) {
-            close(STDOUT_FILENO);
-            dup(fd);
-            close(fd);
+                close(STDOUT_FILENO);
+                dup(fd);
+                close(fd);
             }
         }
         if (redirect == 2)
         { /* redirect stderr */
             fd = creat(outfile, 0660);
             if (pipes_num == 0) {
-            close(STDERR_FILENO);
-            dup(fd);
-            close(fd);
+                close(STDERR_FILENO);
+                dup(fd);
+                close(fd);
             }
         }
         else if (redirect == 3)
         { /* redirect stdout */
             fd = open(outfile, O_CREAT | O_WRONLY | O_APPEND, 0660);
             if (pipes_num == 0) {
-            close(STDOUT_FILENO);
-            dup(fd);
-            close(fd);
+                close(STDOUT_FILENO);
+                dup(fd);
+                close(fd);
             }
         }
         else if (redirect == 4)
         { /* redirect stderr */
             fd = open(infile, O_RDONLY | O_CREAT);
             if (pipes_num == 0) {
-            close(STDIN_FILENO);
-            dup(fd);
-            close(fd);
+                close(STDIN_FILENO);
+                dup(fd);
+                close(fd);
             }
         }
 }
@@ -300,7 +355,6 @@ int main(){
     strcpy(prompt, "hello:");
     
     main_pid = getpid();
-    char command[1024];
     char *token;
     int i;
     int amper, redirect, status, args_count;
@@ -310,15 +364,12 @@ int main(){
     int pipe_two[2];
     int pipes_num;
 
-    //For linked list of commands
-    Commands *root;
-
     //For store variables
     key_value_root = (key_value*) malloc(sizeof(key_value));
     key_value_root->next = NULL;
 
-    //For store the last commands
-    last_commands *last_commands_root = (last_commands*) malloc(sizeof(last_commands));
+    //For store last commands
+    last_commands_root = (last_commands*) malloc(sizeof(last_commands));
     last_commands_root->next = NULL;
     last_commands_root->prev = NULL;
 
@@ -333,7 +384,7 @@ int main(){
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0';
 
-        /* 6. Update the lest command */
+        // Update lest command
         strcpy(command, str_replace(command, "!!", lastCommand));
         if (strlen(command) != 0){
             strcpy(lastCommand, command);
@@ -342,61 +393,23 @@ int main(){
         i = 0;
         pipes_num = 0;
 
-        
         token = strtok(command, " ");
 
-        //Handle with arrow up & down
-        if(!strcmp(token,"\033[A")){
-        
-            if(last_commands_root->prev != NULL){
-                strcpy(command, last_commands_root->prev->command);
-                last_commands_root = last_commands_root->prev;
-                token = strtok(command, " ");
-            }else{
-                strcpy(command, last_commands_root->command);
-            }
-            
-        } else if(!strcmp(token,"\033[B")){
-
-            if(last_commands_root->next != NULL){
-                strcpy(command, last_commands_root->next->command);
-                last_commands_root = last_commands_root->next;
-                token = strtok(command, " ");
-            }else{
-                strcpy(command, last_commands_root->next->command);
-            }
-
-        } else if (strlen(command) != 0){
-            
-            while(last_commands_root->next != NULL){
-                last_commands_root = last_commands_root->next;
-            }
-
-            //Insert command to current last_commands
-            strcpy(last_commands_root->command, lastCommand);
-
-            last_commands *next = (last_commands*) malloc(sizeof(last_commands));
-            next->prev = last_commands_root;
-            last_commands_root->next = next;
-            last_commands_root = last_commands_root->next;
-            last_commands_root->next = NULL;
-
-        }
+        handle_arrows(token);
 
         root = (Commands *)malloc(sizeof(Commands));
         root->next = NULL;
         Commands *current = root;
         while (token != NULL){
 
-            //7. Exit from the program
+            // Exit from the program
             check_quit(token);
 
             current->command[i] = token;
             token = strtok(NULL, " ");
             i++;
 
-            
-            //There is pipes => allocate new place for new command
+            // There is pipes => allocate new place for new command
             if (token && !strcmp(token, "|")){
                 token = strtok(NULL, " "); // skip empty space after "|"
                 pipes_num++;
@@ -413,56 +426,48 @@ int main(){
         current->command[i] = NULL;
         args_count = i;
         
-        /* Is command empty */
+        // Checks of command empty
         if (root->command[0] == NULL)
             continue;
 
-        // 4. Print the status of last command executed
         handle_exit_status(root, status);
 
-        // 5. Change path
         handle_cd_command(root->command[0], root->command[1]);
 
-        // 10. Handle named variables
         handle_variables(root, pipes_num);
 
-        handle_read_command(root->command[0],root->command[1]);
+        handle_read_command();
         
-        /* Does command line end with & */
-        if (!strcmp(current->command[args_count - 1], "&")){
-            root->command[args_count - 1] = NULL;
-            amper = 1;
-        } else
-            amper = 0;
+        amper = handle_ampersand_command(current, args_count);
 
-        while(current->next != NULL) current = current->next;
+        // while(current->next != NULL) current = current->next;
 
         redirect = handle_redirection(args_count, current);
 
         change_prompt(current->command[0],current->command[1],current->command[2]);
 
-        /* for commands not part of the shell command language */
+        // for commands not part of the shell command language
         if (fork() == 0) {
 
             execute_redirection(redirect, pipes_num);
 
-            /* 9. ------------ Handle pipes ------------*/
+            // Handle pipes 
             if (pipes_num > 0){
                 current = root;
-                /* Create pipe (0 = pipe output. 1 = pipe input) */
+                // Create pipe (0 = pipe output. 1 = pipe input) 
                 pipe(pipe_one);
-                /* for more then 1 pipe we need another pipe for chaining */
+                // for more then 1 pipe we need another pipe for chaining 
                 if (pipes_num > 1)
                     pipe(pipe_two);
-                /* For Iterating over all commands except the first & last components */
+                // For Iterating over all commands except the first & last components 
                 int pipes_iterator = pipes_num - 1, pipe_switcher = 1, status = 1;
-                /* Run first component (we need to get the input from the standart input) */
+                // Run first component (we need to get the input from the standart input)
                 pid_t pid = fork();
                 if (pid == 0){
                     dup2(pipe_one[1], 1);
                     close(pipe_one[0]);
                     if (pipes_num > 1)
-                        //Close both sides of fd pipe
+                        // Close both sides of fd pipe
                         close(pipe_two[0]);
                         close(pipe_two[1]);
                     execvp(current ->command[0], current ->command);
@@ -489,12 +494,12 @@ int main(){
                     } else {
                         waitpid(pid, &status, 0);
                         if (pipe_switcher % 2 == 1) {
-                            //Close both sides of fd pipe
+                            // Close both sides of fd pipe
                             close(pipe_two[1]);
                             close(pipe_one[0]);
                             pipe(pipe_one);
                         } else {
-                            //Close both sides of fd pipe
+                            // Close both sides of fd pipe
                             close(pipe_one[1]);
                             close(pipe_two[0]);
                             pipe(pipe_two);
@@ -504,16 +509,13 @@ int main(){
                         pipes_iterator--;
                     }
                 }
-                /* Run last component (we need to output to the standart output) */
+                // Run last component (we need to output to the standart output)
                     if (pipe_switcher % 2 == 0)
                         dup2(pipe_two[0], 0);
                     else
                         dup2(pipe_one[0], 0);
 
-                /* ------------ End of handle pipes ------------*/
-
                     // /* 1. ---------- Handle Redirection (In pipes) ---------- */
-
                     // if (redirect == 1) { /* redirect stdout */
                     //     fd = creat(outfile, 0660);
                     //     dup2(fd, STDOUT_FILENO);
@@ -545,7 +547,7 @@ int main(){
             } else {
                 execvp(root->command[0], root->command);
             }
-            /* In case of unknown command let the child exit */
+            // In case of unknown command let the child exit
             exit(0);
         }
 
@@ -555,7 +557,7 @@ int main(){
             wait(&status); // retid = wait(&status);
 
 
-        /* Free up all command components struct dynamic allocation */
+        // Free up all commands struct dynamic allocation
         Commands *prev = root;
         current = root;
         for (int i = 0; i <= pipes_num; i++) {
