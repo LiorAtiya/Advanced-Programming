@@ -19,6 +19,15 @@ char *infile;
 char *outfile;
 int fd = -2;
 
+//For if else statement
+enum states { NEUTRAL, WANT_THEN, THEN_BLOCK };
+enum results { SUCCESS, FAIL };
+
+int if_state = NEUTRAL;
+int if_result = SUCCESS;
+int last_stat = 0;
+int rv = -1;
+
 //Key_value linked list = store named variables
 typedef struct key_value {
    char* key;
@@ -257,6 +266,7 @@ void handle_variables(Commands *root,int pipes_num) {
     }
 }
 
+// Add new variable with 'read'
 void handle_read_command(){
     if (root->command[0] != NULL && root->command[1] != NULL && strcmp(root->command[0],"read") == 0) {
         char *key = root->command[1];
@@ -349,6 +359,101 @@ void execute_redirection(int redirect, int pipes_num) {
         }
 }
 
+//------- if / else statment ---------
+
+int syn_err(char *msg){
+    fprintf(stderr,"syntax error: %s\n", msg);
+    return -1;
+}
+
+// int is_control_command(char *s){
+//     return (strcmp(s,"if") == 0 || strcmp(s,"then") == 0 || strcmp(s,"fi") == 0);
+// }
+
+// int ok_to_execute()
+// {
+//     int rv = 1;
+//     if(if_state == WANT_THEN) {
+//         syn_err("then expected");
+//         rv = 0;
+//     }
+//     else if (if_state == THEN_BLOCK && if_result == SUCCESS) {
+//         rv = 1;
+//     }
+//     else if (if_state == THEN_BLOCK && if_state == FAIL) {
+//         rv = 0;
+//     }
+//     return rv;
+// }
+
+// int do_control_command(char **args){
+//     char *cmd = args[0];
+//     int rv = -1;
+//     if(strcmp(cmd, "if") == 0) {
+//         if(if_state != NEUTRAL){
+//             rv = syn_err("if unexpected");
+//         }else {
+//             last_stat = process(args+1);
+//             if_state = (last_stat == 0 ? SUCCESS : FAIL);
+//             if_state = WANT_THEN;
+//             rv = 0;
+//         }
+//     }else if (strcmp(cmd,"then") == 0) {
+//         if (if_state != WANT_THEN){
+//             rv = syn_err("then unexpected");
+//         }else {
+//             if_state = THEN_BLOCK;
+//             rv = 0;
+//         }
+//     }else if (strcmp(cmd,"fi") == 0){
+//         if( if_state != THEN_BLOCK){
+//             rv = syn_err("fi unexpected");
+//         }else {
+//             if_state = NEUTRAL;
+//             rv = 0;
+//         }
+//     }else {
+//         fatal("internal error proccessing:",cmd,2);
+//     }
+
+//     return rv;
+// }
+
+int execute(char *argv[]){
+    int pid;
+    int child_info = -1;
+    if((pid = fork() == -1)){
+        perror("fork");
+    }else if (pid == 0) {
+        signal(SIGINT,SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+        printf("child_info: %d",child_info);
+        execvp(argv[0], argv);
+        perror("cannot execute command");
+        exit(1);
+    }else {
+        if( wait(&child_info) == -1){
+            perror("wait");
+        }
+    }
+    return child_info;
+}
+
+int process(){
+
+    int rv = 0;
+    if(root->command[1] == NULL) {
+        rv = 0;
+    // }else if (is_control_command(root->command[1])) {
+    //     rv = do_control_command();
+    }else {
+        rv = execute(root->command);
+        printf("rv is: %d\n",rv);
+    }
+
+    return rv;
+}
+
 int main(){
     //Share the prompt name since we want to update the parent after the child changing the name
     prompt = (char*)mmap(NULL, sizeof(char)*1000, 0x1|0x2 , 0x01 | 0x20, -1, 0);
@@ -374,7 +479,7 @@ int main(){
     last_commands_root->prev = NULL;
 
     while (1) {
-    
+        
         // 8.Handler with Ctrl + C
         signal(SIGINT, ctrl_c_handler);
 
@@ -429,6 +534,64 @@ int main(){
         // Checks of command empty
         if (root->command[0] == NULL)
             continue;
+
+        if(if_state == THEN_BLOCK){
+            if (if_result == FAIL && strcmp(root->command[0],"fi")){
+
+                // Free up all commands struct dynamic allocation
+                Commands *prev = root;
+                current = root;
+                for (int i = 0; i <= pipes_num; i++) {
+                    prev = current;
+                    current = current->next;
+                    free(prev);
+                }
+
+                continue;
+            }
+        }
+
+        if(if_state == WANT_THEN && strcmp(root->command[0],"then")){
+            rv = syn_err("then unexpected");
+            continue;
+        }
+
+        if(strcmp(root->command[0],"if") == 0){
+            if(if_state != NEUTRAL){
+                rv = syn_err("if unexpected");
+            }else {
+                //Execute command after the 'if'
+                char without_if[1024];
+                strncpy(without_if, lastCommand + 3, sizeof(lastCommand) - 3);
+
+                //Check if the condition is true
+                last_stat = system(without_if);
+
+                if_result = (last_stat == 0? SUCCESS : FAIL);
+                if_state = WANT_THEN;
+            }
+        }else if (strcmp(root->command[0],"then") == 0){
+            if (if_state == THEN_BLOCK) {
+                rv = syn_err("fi unexpected");
+            }
+            else if (if_state == NEUTRAL)
+            {
+                rv = syn_err("if unexpected");
+            }
+            else {
+                if_state = THEN_BLOCK;
+            }
+        }else if (strcmp(root->command[0],"fi") == 0) {
+            if (if_state == WANT_THEN) {
+                rv = syn_err("then unexpected");
+            }
+            else if (if_state == NEUTRAL){
+                rv = syn_err("if unexpected");
+            }else {
+                if_state = NEUTRAL;
+                if_result = SUCCESS;
+            }
+        }
 
         handle_exit_status(root, status);
 
