@@ -1,9 +1,8 @@
-.PHONY: all
 all: task1
 
 task1: shell.c
 	gcc shell.c -o shell
 
-.PHONY: clean
+.PHONY: clean all
 clean:
-	-rm shell 2>/dev/null
+	-rm -f shell
